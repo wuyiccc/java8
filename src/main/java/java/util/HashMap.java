@@ -260,7 +260,7 @@ public class HashMap<K,V> extends AbstractMap<K,V>
     //bin(桶)容量小于等于6时，红黑树转化成链表
     static final int UNTREEIFY_THRESHOLD = 6;
 
-   //容量最小64时才会转会成红黑树
+   //table.length数组容量最小64时才会转会成红黑树
     static final int MIN_TREEIFY_CAPACITY = 64;
 
     //用于fail-fast的，记录HashMap结构发生变化(数量变化或rehash)的数目
