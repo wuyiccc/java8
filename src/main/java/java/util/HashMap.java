@@ -517,6 +517,7 @@ public class HashMap<K,V> extends AbstractMap<K,V>
         //5:对红黑树的根节点进行校验
 
         //h：key 的hash值
+        // note: 树节点值大小的比较优先比较hash值大小, 如果hash值相等, 那么优先进行key的相等判断, 如果不相等, 那么
         final TreeNode<K,V> putTreeVal(HashMap<K,V> map, Node<K,V>[] tab,
                                        int h, K k, V v) {
             Class<?> kc = null;
@@ -526,10 +527,10 @@ public class HashMap<K,V> extends AbstractMap<K,V>
             //自旋
             for (TreeNode<K,V> p = root;;) {
                 int dir, ph; K pk;
-                // p hash 值大于 h，说明 p 在 h 的右边
+                // phash值大于要插入节点的hash值, 那么将dir置为-1, 表示下一次搜索从p的左子树开始搜索
                 if ((ph = p.hash) > h)
                     dir = -1;
-                // p hash 值小于 h，说明 p 在 h 的左边
+                // phash值小于要插入节点的hash值, 那么将dir置为1, 表示下一次搜索从p的右子树开始搜索
                 else if (ph < h)
                     dir = 1;
                 //要放进去key在当前树中已经存在了(equals来判断)
@@ -1177,7 +1178,7 @@ public class HashMap<K,V> extends AbstractMap<K,V>
         //数组不为空 && hash算出来的索引下标有值，
         if ((tab = table) != null && (n = tab.length) > 0 &&
             (first = tab[(n - 1) & hash]) != null) {
-            //hash 和 key 的 hash 相等，直接返回
+            //hash 和 key 的 hash 相等, 并且key值相等, 那么直接将当前节点返回
             if (first.hash == hash &&
                 ((k = first.key) == key || (key != null && key.equals(k))))
                 return first;
@@ -1293,10 +1294,12 @@ public class HashMap<K,V> extends AbstractMap<K,V>
             //说明新增的元素table中原来就有
             if (e != null) {
                 V oldValue = e.value;
+                // 如果onlyIfAbsent为false, 那么已经存在该key, 就强制覆盖该值
                 if (!onlyIfAbsent || oldValue == null)
                     e.value = value;
                 // 当前节点移动到队尾
                 afterNodeAccess(e);
+                // 返回旧值
                 return oldValue;
             }
         }
