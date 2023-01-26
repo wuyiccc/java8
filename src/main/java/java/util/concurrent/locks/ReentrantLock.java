@@ -155,6 +155,7 @@ public class ReentrantLock implements Lock, java.io.Serializable {
         // Sync 提供的 tryRelease 默认实现，非公平和公平锁都使用
         protected final boolean tryRelease(int releases) {
             // 当前同步器的状态减去释放的个数，releases 一般为 1
+            // 减少可重入次数
             int c = getState() - releases;
             // 当前线程不持有锁，报错
             if (Thread.currentThread() != getExclusiveOwnerThread())

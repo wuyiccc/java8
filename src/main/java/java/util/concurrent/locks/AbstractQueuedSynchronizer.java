@@ -909,7 +909,7 @@ public abstract class AbstractQueuedSynchronizer
         Node node = new Node(Thread.currentThread(), mode);
         // 这里的逻辑和 enq 一致，enq 的逻辑仅仅多了队尾是空，初始化的逻辑
         // 这个思路在java源码中很常见，先简单的尝试放一下，成功立马返回，如果不行，再while循环
-        // 很多时候，这种算法可以帮忙解决大部分的问题，发部分的入队可能一次都能成功，无需自旋
+        // 很多时候，这种算法可以帮忙解决大部分的问题，大部分的入队可能一次都能成功，无需自旋
         Node pred = tail;
         if (pred != null) {
             node.prev = pred;
@@ -930,7 +930,6 @@ public abstract class AbstractQueuedSynchronizer
             // 得到队尾节点
             Node t = tail;
             // 如果队尾为空，说明当前同步队列都没有初始化，进行初始化
-            // tail = head = new Node();
             if (t == null) {
                 if (compareAndSetHead(new Node()))
                     tail = head;
@@ -1053,11 +1052,12 @@ public abstract class AbstractQueuedSynchronizer
      */
     private void cancelAcquire(Node node) {
         // Ignore if node doesn't exist
+        // 过滤无效节点
         if (node == null)
             return;
 
+        // 设置该节点不关联任何线程, 也就是虚节点
         node.thread = null;
-
         // Skip cancelled predecessors
         Node pred = node.prev;
         while (pred.waitStatus > 0)
@@ -1066,20 +1066,27 @@ public abstract class AbstractQueuedSynchronizer
         // predNext is the apparent node to unsplice. CASes below will
         // fail if not, in which case, we lost race vs another cancel
         // or signal, so no further action is necessary.
+        // 获取过滤后的前驱节点的后继节点
         Node predNext = pred.next;
 
         // Can use unconditional write instead of CAS here.
         // After this atomic step, other Nodes can skip past us.
         // Before, we are free of interference from other threads.
+        // 把当前node的状态设置为cancelled
         node.waitStatus = Node.CANCELLED;
 
         // If we are the tail, remove ourselves.
+        // 如果当前节点是尾结点, 将从后往前第一个非取消状态的节点设置为尾结点
         if (node == tail && compareAndSetTail(node, pred)) {
+            // 将tail的后继节点设置为null
+            // pred/tail -> (predNext/node --> null)
             compareAndSetNext(pred, predNext, null);
         } else {
             // If successor needs signal, try to set pred's next-link
             // so it will get one. Otherwise wake it up to propagate.
             int ws;
+            // 如果当前节点不是head的后继节点, 1: 判断当前节点前驱节点是否为SIGNAL， 2: 如果不是， 则把前驱节点设置为SIGNAL， 看是否成功
+            // 如果1和2有一个为true, 且当前节点的线程不为null, 那么将当前节点的后继节点作为当前节点的前驱节点的后继节点
             if (pred != head &&
                 ((ws = pred.waitStatus) == Node.SIGNAL ||
                  (ws <= 0 && compareAndSetWaitStatus(pred, ws, Node.SIGNAL))) &&
@@ -1088,6 +1095,7 @@ public abstract class AbstractQueuedSynchronizer
                 if (next != null && next.waitStatus <= 0)
                     compareAndSetNext(pred, predNext, next);
             } else {
+                // 如果当前节点是head的后继节点, 或者上述条件不满足. 那就唤醒当前节点的后继节点
                 unparkSuccessor(node);
             }
 
@@ -1102,7 +1110,10 @@ public abstract class AbstractQueuedSynchronizer
     // 1：确认前置节点是否有效，无效的话，一直往前找到状态不是取消的节点。
     // 2: 把前置节点状态置为 SIGNAL。
     // 1、2 两步操作，有可能一次就成功，有可能需要外部循环多次才能成功，但最后一定是可以成功的
+
+    // 靠前驱节点判断当前线程是否应该被阻塞
     private static boolean shouldParkAfterFailedAcquire(Node pred, Node node) {
+        // 获取前面节点的节点状态
         int ws = pred.waitStatus;
         // 如果前一个节点 waitStatus 状态已经是SIGNAL了，直接返回，不需要在自旋了
         if (ws == Node.SIGNAL)
@@ -1120,6 +1131,7 @@ public abstract class AbstractQueuedSynchronizer
             // 找到前一个状态不是取消的节点，把当前 node 挂在有效节点身上
             // 因为节点状态是取消的话，是无效的，是不能作为 node 的前置节点的，所以必须找到 node 的有效节点才行
             do {
+                // 循环向前查找取消节点, 把取消节点从队列中删除
                 node.prev = pred = pred.prev;
             } while (pred.waitStatus > 0);
             pred.next = node;
@@ -1175,12 +1187,14 @@ public abstract class AbstractQueuedSynchronizer
     // 2：如果前一个节点获得锁，执行完成之后，再释放锁时，会把阻塞的 node 唤醒,唤醒之后再次自旋，再次无限 for 循环尝试获得锁
     // 返回false表示获得锁成功，返回true表示失败
     final boolean acquireQueued(final Node node, int arg) {
+        // 标记是否成功拿到资源
         boolean failed = true;
         try {
+            // 标记等待过程中是否中断过
             boolean interrupted = false;
-            // 自旋
+            // 自旋, 要么获取锁, 要么中断
             for (;;) {
-                // 选上一个节点
+                // 获取当前节点的前置节点
                 final Node p = node.predecessor();
                 // 有两种情况会走到 if：
                 // 1:node 之前没有获得锁，进入 acquireQueued 方法时，发现他的前置节点就是头节点，于是尝试获得一次锁
@@ -1189,7 +1203,7 @@ public abstract class AbstractQueuedSynchronizer
                 // 如果自己 tryAcquire 成功，就立马把自己设置成 head，把上一个节点移除
                 // 如果 tryAcquire 失败，尝试进入同步队列
                 if (p == head && tryAcquire(arg)) {
-                    // 获得锁，设置成 head 节点
+                    // 获得锁，把自己设置成 head 节点
                     setHead(node);
                     //p被回收
                     p.next = null; // help GC
@@ -1200,7 +1214,10 @@ public abstract class AbstractQueuedSynchronizer
                 // shouldParkAfterFailedAcquire 把node的前一个节点状态置为SIGNAL
                 // 只要前一个节点状态是SIGNAL了，那么自己就可以阻塞(park)了
                 // parkAndCheckInterrupt 阻塞当前线程
+                // 说明头节点且当前没有获取到锁(可能被非公平锁抢占了) 或者是p不是头节点,
+                // 这个时候就要判断当前node是否要被阻塞(被阻塞条件: 前驱节点的waitStatus为-1), 防止无限循环浪费资源
                 if (shouldParkAfterFailedAcquire(p, node) &&
+                        // 挂起当前线程
                     parkAndCheckInterrupt())
                     interrupted = true;
             }
@@ -1516,6 +1533,7 @@ public abstract class AbstractQueuedSynchronizer
                     s = t;
         }
         // 唤醒以上代码找到的线程
+        // 如果当前节点的下个节点不为空, 而且状态<0, 就把当前节点unpark
         if (s != null)
             LockSupport.unpark(s.thread);
     }
